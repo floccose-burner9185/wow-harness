@@ -25,6 +25,7 @@ This project is managed by [wow-harness](https://github.com/anthropics/wow-harne
 | PreToolUse Bash | `deploy-guard.py` | Block unauthorized deployments |
 | PreToolUse Bash | `auto-python3.py` | Intercept bare `python` → `python3` |
 | PreToolUse Task | `review-agent-gatekeeper.py` | Enforce read-only isolation on review agents |
+| PreToolUse Read\|Bash | `sanitize-on-read.py` | Sanitize sensitive data in read output |
 | PostToolUse Edit\|Write | `guard-feedback.py` | Context routing + guard checks (ADR-030) |
 | PostToolUse Edit\|Write | `loop-detection.py` | Detect edit-undo-edit loops |
 | PostToolUse Edit\|Write | `risk-tracker.py` | Update risk snapshot on file changes |
@@ -32,6 +33,7 @@ This project is managed by [wow-harness](https://github.com/anthropics/wow-harne
 | Stop | `stop-evaluator.py` | Completion proposal + independent review |
 | SessionEnd | `session-reflection.py` | Session summary and learnings |
 | SessionEnd | `trace-analyzer.py` | Aggregate trace data for harness optimization |
+| SessionEnd | `deploy-progress-on-session-end.py` | Persist deployment progress metrics |
 | PostToolUseFailure | `failure-analyzer.py` | Diagnose tool call failures |
 
 ### Runtime Directories

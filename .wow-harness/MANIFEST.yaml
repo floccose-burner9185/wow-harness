@@ -28,8 +28,11 @@ L1_registry:
   - loop-detection.py
   - precompact.sh
   - review-agent-gatekeeper.py
+  - risk-tracker.py
+  - sanitize-on-read.py
   - session-reflection.py
   - session-start-magic-docs.py
+  - session-start-reset-risk.py
   - session-start-toolkit-reminder.py
   - stop-evaluator.md
   - stop-evaluator.py
@@ -37,6 +40,8 @@ L1_registry:
   - trace-analyzer.py
   - guard-feedback.py
   - deploy-guard.py
+  - context_router.py
+  - guard_router.py
 
 L2_registry:
   - check_api_types.py
@@ -68,22 +73,21 @@ L5_registry:
   - ADR-041-codex-claude-code-division-of-labor.md
 
 # ---------------------------------------------------------------------------
-# settings_command_registry — grep-locked 15-row list of all hook commands
-# declared in .claude/settings.json.
-#
-# WP-SEC-1 CI asserts length == 15 after WP-03 commit, == 16 after WP-11,
-# == 16 at wow-harness release.
+# settings_command_registry — authoritative list of all hook commands
+# declared in .claude/settings.json. Must match settings.json exactly.
 # ---------------------------------------------------------------------------
 
 settings_command_registry:
   - { stage: PostToolUse,        matcher: "Edit|Write", script: scripts/guard-feedback.py,                      timeout: 30 }
   - { stage: PostToolUse,        matcher: "Edit|Write", script: scripts/hooks/loop-detection.py,                timeout: 5  }
-  - { stage: PreToolUse,         matcher: "Read",       script: scripts/guard-feedback.py,                      timeout: 30, args: "--check-only --once" }
+  - { stage: PostToolUse,        matcher: "Edit|Write", script: scripts/hooks/risk-tracker.py,                  timeout: 3  }
   - { stage: PreToolUse,         matcher: "Bash",       script: scripts/deploy-guard.py,                        timeout: 10 }
   - { stage: PreToolUse,         matcher: "Bash",       script: scripts/hooks/auto-python3.py,                  timeout: 5,  if: "Bash(python *)" }
   - { stage: PreToolUse,         matcher: "*",          script: scripts/hooks/tool-call-counter.py,             timeout: 3 }
   - { stage: PreToolUse,         matcher: "Task",       script: scripts/hooks/review-agent-gatekeeper.py,       timeout: 5 }
+  - { stage: PreToolUse,         matcher: "Read|Bash",  script: scripts/hooks/sanitize-on-read.py,             timeout: 10 }
   - { stage: PreCompact,         matcher: "*",          script: scripts/hooks/precompact.sh,                    timeout: 5 }
+  - { stage: SessionStart,       matcher: "*",          script: scripts/hooks/session-start-reset-risk.py,      timeout: 3 }
   - { stage: SessionStart,       matcher: "*",          script: scripts/hooks/session-start-magic-docs.py,      timeout: 10 }
   - { stage: SessionStart,       matcher: "*",          script: scripts/hooks/session-start-toolkit-reminder.py, timeout: 5 }
   - { stage: Stop,               matcher: "*",          script: scripts/hooks/stop-evaluator.py,                timeout: 10 }
@@ -91,7 +95,6 @@ settings_command_registry:
   - { stage: SessionEnd,         matcher: "*",          script: scripts/hooks/trace-analyzer.py,                timeout: 30, args: "analyze --days 1 --min-samples 3" }
   - { stage: SessionEnd,         matcher: "*",          script: scripts/hooks/deploy-progress-on-session-end.py, timeout: 5 }
   - { stage: PostToolUseFailure, matcher: "*",          script: scripts/hooks/failure-analyzer.py,              timeout: 5 }
-  - { stage: PreToolUse,         matcher: "Read|Bash",  script: scripts/hooks/sanitize-on-read.py,             timeout: 10 }
 
 # ---------------------------------------------------------------------------
 # rebaseline_triggers — WP-SEC-1 detect_rebaseline_triggers.py consumption.
@@ -110,9 +113,11 @@ rebaseline_triggers:
 # physical_files — WP-SEC-1 CI double-commit count assertion.
 #   WP-03 commit: 17 (15 hooks + 2 root scripts)
 #   WP-11 commit: 18 (+ install-wow-harness SKILL.md)
+#   post-audit: 22 (+ risk-tracker, session-start-reset-risk, sanitize-on-read,
+#                     context_router, guard_router)
 # ---------------------------------------------------------------------------
 
-physical_files: 18
+physical_files: 22
 
 # ---------------------------------------------------------------------------
 # bash_read_keywords — Bash matcher read-only classification.
