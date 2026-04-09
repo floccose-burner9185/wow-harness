@@ -61,7 +61,7 @@ def run(changed_files: list[str] | None = None) -> list[Finding]:
                 blocking=False,
                 category="skill_parity",
                 problem_class="truth_source_split",
-                required_skills=["towow-ops"],
+                required_skills=["harness-ops"],
             ))
             continue
 
@@ -74,7 +74,7 @@ def run(changed_files: list[str] | None = None) -> list[Finding]:
                 blocking=False,
                 category="skill_parity",
                 problem_class="truth_source_split",
-                required_skills=["towow-ops"],
+                required_skills=["harness-ops"],
             ))
             continue
 
@@ -87,7 +87,7 @@ def run(changed_files: list[str] | None = None) -> list[Finding]:
                 blocking=False,
                 category="skill_parity",
                 problem_class="truth_source_split",
-                required_skills=["towow-ops"],
+                required_skills=["harness-ops"],
             ))
 
     return findings

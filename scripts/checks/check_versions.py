@@ -18,7 +18,7 @@ if str(_REPO_ROOT) not in sys.path:
 from scripts.checks import Finding
 
 # Directories to skip
-_SKIP_DIRS = {"node_modules", "venv", ".venv", ".git", "__pycache__", ".open-next", "dist", "build", ".next", ".towow"}
+_SKIP_DIRS = {"node_modules", "venv", ".venv", ".git", "__pycache__", ".open-next", "dist", "build", ".next", ".wow-harness"}
 # Directories where 'version:' fields refer to their own artifacts, not MCP
 _SKIP_VERSION_DIRS = {".claude/agents", ".claude/skills"}
 # File extensions to scan

@@ -1,6 +1,6 @@
 # 审查 Agent 工具隔离规则
 
-**来源**: wow-harness ADR-038 D11 (fork of Towow ADR-038)
+**来源**: ADR-038 D11 + OpenDev arXiv 2603.05344
 **适用范围**: 所有 review / audit / evaluator / gate-keeper 类 subagent
 **强制等级**: 不可降级（hard rule）
 
