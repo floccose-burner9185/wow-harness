@@ -18,21 +18,16 @@
             "type": "command",
             "command": "cd \"$(/Users/nature/个人项目/wow-harness/scripts/hooks/find-project-root.sh)\" && python3 scripts/hooks/loop-detection.py",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "cd \"$(/Users/nature/个人项目/wow-harness/scripts/hooks/find-project-root.sh)\" && python3 scripts/hooks/risk-tracker.py 2>/dev/null || true",
+            "timeout": 3
           }
         ]
       }
     ],
     "PreToolUse": [
-      {
-        "matcher": "Read",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "cd \"$(/Users/nature/个人项目/wow-harness/scripts/hooks/find-project-root.sh)\" && python3 scripts/guard-feedback.py --check-only --once",
-            "timeout": 30
-          }
-        ]
-      },
       {
         "matcher": "Bash",
         "hooks": [

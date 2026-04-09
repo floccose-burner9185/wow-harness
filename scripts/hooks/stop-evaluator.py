@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
-"""Stop hook: PreCompletionChecklist 注入
+"""Stop hook: L3 Completion Gate (ADR-044 §3.4)
 
-[来源: ADR-038 D2.1 + D4 + LangChain PreCompletionChecklist (52.8%→66.5% 提升的三个组件之一)]
+[来源: ADR-044 §3.4 + ADR-038 D2.1 + D4]
+
+核心原则（ADR-044 §3.4.1）：
+  Stop ≠ Completion。Stop 只是 transport 事件。
+  只有存在 completion candidate 时才触发 L3 检查。
+
+Completion candidate 定义（§3.4.2）：
+  1. git diff --name-only 非空（有未提交的变更）
+  2. git diff --cached --name-only 非空（有已暂存的变更）
+  3. 风险快照显示 R1+
+  4. progress.json 存在未验收产物
+
+不是 completion candidate 的场景：
+  纯聊天、纯研究、纯规划、纯 Read/Grep 浏览 → 静默放行。
 
 CC Stop hook 协议：
-- exit 2 + stderr → 阻止 Stop 并把 stderr 作为"还需要做的事"反馈给 agent
+- exit 2 + stderr → 阻止 Stop 并注入反馈
 - exit 0 → 允许 Stop
-
-策略：
-1. 第一次 Stop 尝试 → 注入 stop-evaluator.md 检查清单 + exit 2
-2. 第二次起 → exit 0（避免无限阻塞）
-3. 同一 session（按 ppid）只阻塞一次
-
-注意：这是"软评估"——父 agent 自评，仍有 self-evaluation bias。
-真正的独立 Evaluator subagent 等 CC agent-type hook 验证后升级。
 """
 from __future__ import annotations
 
@@ -27,8 +32,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 EVALUATOR_MD = REPO_ROOT / "scripts" / "hooks" / "stop-evaluator.md"
 INITIALIZER_AGENT = REPO_ROOT / "scripts" / "hooks" / "initializer-agent.py"
-STATE_DIR = REPO_ROOT / ".wow-harness/state" / "guard"
-METRICS_DIR = REPO_ROOT / ".wow-harness/state" / "metrics"
+STATE_DIR = REPO_ROOT / ".wow-harness" / "state" / "guard"
+METRICS_DIR = REPO_ROOT / ".wow-harness" / "state" / "metrics"
 TTL_SECONDS = 3600  # 1 小时后允许重新阻塞
 
 
@@ -144,14 +149,68 @@ def mechanical_first_pass(session_key: str) -> tuple[int, str]:
     return 2, msg
 
 
+def is_completion_candidate() -> tuple[bool, str]:
+    """ADR-044 §3.4.2 — 机械判定是否存在 completion candidate。
+
+    返回 (is_candidate, reason)。
+    reason 用于 metrics，不注入 agent context。
+    """
+    # 条件 1: 未提交的变更
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-only"],
+            capture_output=True, text=True, timeout=5,
+            cwd=str(REPO_ROOT),
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return True, "unstaged_changes"
+    except (subprocess.SubprocessError, OSError):
+        pass
+
+    # 条件 2: 已暂存的变更
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--cached", "--name-only"],
+            capture_output=True, text=True, timeout=5,
+            cwd=str(REPO_ROOT),
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return True, "staged_changes"
+    except (subprocess.SubprocessError, OSError):
+        pass
+
+    # 条件 3: 风险快照 R1+
+    risk_snapshot = REPO_ROOT / ".wow-harness" / "state" / "risk-snapshot.json"
+    if risk_snapshot.exists():
+        try:
+            risk = json.loads(risk_snapshot.read_text(encoding="utf-8"))
+            level = risk.get("risk_level", "R0")
+            if level not in ("R0", ""):
+                return True, f"risk_elevated_{level}"
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # 条件 4: progress.json 有未验收产物
+    if INITIALIZER_AGENT.exists():
+        try:
+            result = subprocess.run(
+                ["python3", str(INITIALIZER_AGENT), "stop-check"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode == 1:  # has failing features
+                return True, "unfinished_features"
+        except (subprocess.SubprocessError, OSError):
+            pass
+
+    return False, "no_completion_candidate"
+
+
 def main() -> None:
     # 解析 CC hook stdin JSON payload（含 session_id + stop_hook_active）
     payload = read_hook_payload()
     session_key = get_session_key(payload)
 
     # ─── Step -1: CC 官方防循环字段 ───
-    # 当 stop_hook_active == true 时，说明 CC 是因为前一次 stop hook exit 2 才 continue 的，
-    # 再阻塞会形成无限循环。这是 CC 官方推荐的硬兜底。
     if payload.get("stop_hook_active") is True:
         emit_metric("stop_pass", session_key, reason="stop_hook_active_guard")
         sys.exit(0)
@@ -160,7 +219,14 @@ def main() -> None:
         emit_metric("stop_pass", session_key, reason="already_blocked_once")
         sys.exit(0)
 
-    # ─── Step 0: D8.2 机械化第一关 ───
+    # ─── Step 0: ADR-044 §3.4.2 — Completion Candidate 门控 ───
+    # 没有 completion candidate → 静默放行，不注入任何文本
+    is_candidate, reason = is_completion_candidate()
+    if not is_candidate:
+        emit_metric("stop_pass", session_key, reason=reason)
+        sys.exit(0)
+
+    # ─── Step 1: D8.2 机械化第一关 ───
     # progress.json 真相源 — 零 LLM 成本，零 self-eval bias
     mech_code, mech_msg = mechanical_first_pass(session_key)
     if mech_code == 2:
@@ -168,7 +234,7 @@ def main() -> None:
         mark_blocked(session_key)
         sys.exit(2)
 
-    # 读取 evaluator 检查清单
+    # ─── Step 2: 注入 L3 检查清单 ───
     if not EVALUATOR_MD.exists():
         emit_metric("stop_skip", session_key, reason="evaluator_md_missing")
         sys.exit(0)
@@ -179,10 +245,9 @@ def main() -> None:
         emit_metric("stop_skip", session_key, reason="evaluator_md_read_error")
         sys.exit(0)
 
-    # 注入检查清单 + 阻止 Stop（exit 2 + stderr）
     sys.stderr.write(checklist + "\n")
     mark_blocked(session_key)
-    emit_metric("stop_block", session_key, reason="first_attempt_inject_checklist")
+    emit_metric("stop_block", session_key, reason=f"completion_candidate_{reason}")
     sys.exit(2)
 
 
