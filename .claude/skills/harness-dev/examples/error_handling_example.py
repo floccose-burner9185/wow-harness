@@ -26,12 +26,12 @@ logger = logging.getLogger(__name__)
 # 自定义异常（清晰的错误语义）
 # =============================================================================
 
-class ToWowError(Exception):
+class HarnessError(Exception):
     """{{PROJECT_NAME}}系统的基础异常"""
     pass
 
 
-class ProfileDataSourceError(ToWowError):
+class ProfileDataSourceError(HarnessError):
     """Profile 数据源错误"""
     pass
 
@@ -53,7 +53,7 @@ class ProfileServiceUnavailableError(ProfileDataSourceError):
         )
 
 
-class ResonanceError(ToWowError):
+class ResonanceError(HarnessError):
     """共振检测错误"""
     pass
 
@@ -69,7 +69,7 @@ class InvalidVectorError(ResonanceError):
         )
 
 
-class LLMError(ToWowError):
+class LLMError(HarnessError):
     """LLM 调用错误"""
     pass
 
@@ -380,7 +380,7 @@ def demo_llm_calling():
    - 业务错误：自定义异常（如 ProfileNotFoundError）
 
 2. **自定义异常**：
-   - 继承自基础异常（如 ToWowError）
+   - 继承自基础异常（如 HarnessError）
    - 包含上下文信息（如 user_id, service_name）
    - 清晰的命名（如 ProfileServiceUnavailableError）
 
