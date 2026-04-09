@@ -2,7 +2,7 @@
 """PostToolUse hook: L2 Risk Snapshot Tracker (ADR-044 §4)
 
 在每次 Edit|Write 后，根据被修改文件的路径计算风险等级，
-写入 .wow-harness/state/risk-snapshot.json。
+写入 .towow/state/risk-snapshot.json。
 
 核心规则（§4.2）：风险只能升，不能降（棘轮）。
 核心规则（§4.3）：风险由客观事实（路径）计算，不由 AI 自述。
@@ -24,19 +24,22 @@ import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-STATE_FILE = REPO_ROOT / ".wow-harness" / "state" / "risk-snapshot.json"
+STATE_FILE = REPO_ROOT / ".towow" / "state" / "risk-snapshot.json"
 
 # ─── Risk level ordering ───
 RISK_ORDER = {"R0": 0, "R1": 1, "R2": 2, "R3": 3, "R4": 4}
 
 # ─── Path-based risk elevators (ADR-044 §4.4) ───
-# Patterns: (path_prefix_or_contains, minimum_risk)
+# Patterns: (path_prefix, minimum_risk)
+# Uses startswith matching to avoid false positives from substring hits
+# (e.g. "migration" in "docs/migration-guide.md").
 RISK_ELEVATORS: list[tuple[str, str]] = [
     # R4: production side effects
     ("scripts/deploy", "R4"),
-    ("migration", "R4"),
+    ("backend/product/db/migration", "R4"),
 
     # R3: governance / hooks / CI / security
+    ("CLAUDE.md", "R3"),
     (".claude/settings.json", "R3"),
     (".claude/skills/", "R3"),
     (".claude/rules/", "R3"),
@@ -47,11 +50,12 @@ RISK_ELEVATORS: list[tuple[str, str]] = [
 
     # R2: public contracts
     ("backend/product/routes/", "R2"),
+    ("backend/product/config.py", "R2"),
     ("backend/server.py", "R2"),
-    ("schemas/", "R2"),
     ("docs/decisions/ADR-", "R2"),
     ("mcp-server/", "R2"),
-    ("website/", "R2"),
+    ("mcp-server-node/", "R2"),
+    ("website/app/", "R2"),
 
     # R1: multi-file changes (handled separately)
 ]
@@ -92,7 +96,7 @@ def save_snapshot(snap: dict) -> None:
 def classify_file(file_path: str) -> str:
     """Return minimum risk level for a file path."""
     for pattern, risk in RISK_ELEVATORS:
-        if pattern in file_path:
+        if file_path.startswith(pattern):
             return risk
     return "R0"
 

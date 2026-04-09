@@ -10,7 +10,7 @@ import sys
 import time
 from pathlib import Path
 
-METRICS_DIR = Path(".wow-harness/state/metrics")
+METRICS_DIR = Path(".towow/metrics")
 
 
 def main():

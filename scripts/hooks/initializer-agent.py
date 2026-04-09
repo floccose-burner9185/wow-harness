@@ -39,10 +39,10 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-PROGRESS_DIR = REPO_ROOT / ".wow-harness/state" / "progress"
+PROGRESS_DIR = REPO_ROOT / ".towow" / "progress"
 CURRENT_LINK = PROGRESS_DIR / "current.json"
 OBJECTIVE_HASH_DIR = PROGRESS_DIR / ".objective_hashes"
-METRICS_DIR = REPO_ROOT / ".wow-harness/state" / "metrics"
+METRICS_DIR = REPO_ROOT / ".towow" / "metrics"
 
 VALID_STATUSES = {"failing", "passing", "blocked"}
 SCHEMA_VERSION = "v4.1-d8-steps"  # v4 → v4.1: 加入 Anthropic 第二篇 steps[] + verification_command + evidence 强制

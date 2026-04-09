@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 LOOP_THRESHOLD = 5  # 同一文件编辑超过此次数则提醒
-STATE_DIR = Path(".wow-harness/state/guard")
+STATE_DIR = Path(".towow/guard")
 STATE_FILE_PREFIX = "loop-"
 TTL_SECONDS = 3600  # 1 小时后重置计数
 

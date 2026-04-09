@@ -6,7 +6,7 @@
 
 设计原则：
 1. **不常驻** — 事件触发或 cron 调用，不是 hook
-2. **不自动落地** — 输出 .wow-harness/state/proposals/<timestamp>.md，人工审查后才进入 D6.1
+2. **不自动落地** — 输出 .towow/proposals/<timestamp>.md，人工审查后才进入 D6.1
 3. **confidence 门槛** — 只有 confidence ≥ 0.8 的建议才推荐合并
 4. **不分析单条** — 必须有足够样本才聚类（默认 N≥5）
 
@@ -39,8 +39,8 @@ from pathlib import Path
 from typing import Any, Iterator
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-METRICS_DIR = REPO_ROOT / ".wow-harness/state" / "metrics"
-PROPOSALS_DIR = REPO_ROOT / ".wow-harness/state" / "proposals"
+METRICS_DIR = REPO_ROOT / ".towow" / "metrics"
+PROPOSALS_DIR = REPO_ROOT / ".towow" / "proposals"
 
 METRICS_FILES = {
     "guard": "guard-events.jsonl",
@@ -338,7 +338,7 @@ def generate_proposal(all_findings: dict[str, list[dict]], days: int) -> str:
     lines.append("1. 审查每个 finding 的 root cause 假设")
     lines.append("2. 对 confidence ≥ 0.8 的建议建 issue (`docs/issues/...`)")
     lines.append("3. 实施 harness change → 等下次 trace-analyzer 运行验证效果")
-    lines.append("4. 验证后归档 proposal 到 `.wow-harness/state/proposals/archive/`")
+    lines.append("4. 验证后归档 proposal 到 `.towow/proposals/archive/`")
     lines.append("")
 
     return "\n".join(lines)

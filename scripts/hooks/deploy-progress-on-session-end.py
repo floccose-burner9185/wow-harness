@@ -3,7 +3,7 @@
 
 工作流程：
 1. 只在 main 分支生效
-2. 读 .wow-harness/state/progress-deploy-sha（上次成功部署的 SHA）
+2. 读 .towow/progress-deploy-sha（上次成功部署的 SHA）
 3. 对比 git rev-parse HEAD
 4. 相同 → skip（无改动不必浪费 scp）
 5. 不同 → nohup 后台跑 bash scripts/deploy-progress.sh --yes
@@ -12,7 +12,7 @@
 硬约束：
 - 必须在 SessionEnd hook timeout (10s) 内返回
 - 绝不 fail CC 退出（任何异常都 return 0）
-- 日志写到 .wow-harness/state/logs/progress-deploy.log 方便事后排查
+- 日志写到 .towow/logs/progress-deploy.log 方便事后排查
 
 触发点：见 .claude/settings.json SessionEnd hooks 数组。
 真正的部署脚本：scripts/deploy-progress.sh
@@ -50,7 +50,7 @@ def current_branch(repo: Path) -> str | None:
 
 
 def last_deployed_sha(repo: Path) -> str | None:
-    sha_file = repo / ".wow-harness/state" / "progress-deploy-sha"
+    sha_file = repo / ".towow" / "progress-deploy-sha"
     if not sha_file.exists():
         return None
     try:
@@ -60,7 +60,7 @@ def last_deployed_sha(repo: Path) -> str | None:
 
 
 def log(repo: Path, msg: str) -> None:
-    log_dir = repo / ".wow-harness/state" / "logs"
+    log_dir = repo / ".towow" / "logs"
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file = log_dir / "progress-deploy.log"
@@ -99,7 +99,7 @@ def main() -> int:
     log(repo, f"trigger deploy: HEAD={head[:8]}, last={last[:8] if last else 'none'}")
 
     # nohup 后台异步跑，不阻塞 CC 退出
-    log_file = repo / ".wow-harness/state" / "logs" / "progress-deploy-run.log"
+    log_file = repo / ".towow" / "logs" / "progress-deploy-run.log"
     try:
         with log_file.open("a") as outf:
             outf.write(f"\n=== {datetime.now().isoformat()} trigger HEAD={head[:8]} ===\n")

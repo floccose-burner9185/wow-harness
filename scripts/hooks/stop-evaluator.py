@@ -32,8 +32,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 EVALUATOR_MD = REPO_ROOT / "scripts" / "hooks" / "stop-evaluator.md"
 INITIALIZER_AGENT = REPO_ROOT / "scripts" / "hooks" / "initializer-agent.py"
-STATE_DIR = REPO_ROOT / ".wow-harness" / "state" / "guard"
-METRICS_DIR = REPO_ROOT / ".wow-harness" / "state" / "metrics"
+STATE_DIR = REPO_ROOT / ".towow" / "guard"
+METRICS_DIR = REPO_ROOT / ".towow" / "metrics"
 TTL_SECONDS = 3600  # 1 小时后允许重新阻塞
 
 
@@ -154,20 +154,31 @@ def is_completion_candidate() -> tuple[bool, str]:
 
     返回 (is_candidate, reason)。
     reason 用于 metrics，不注入 agent context。
-    """
-    # 条件 1: 未提交的变更
-    try:
-        result = subprocess.run(
-            ["git", "diff", "--name-only"],
-            capture_output=True, text=True, timeout=5,
-            cwd=str(REPO_ROOT),
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return True, "unstaged_changes"
-    except (subprocess.SubprocessError, OSError):
-        pass
 
-    # 条件 2: 已暂存的变更
+    所有条件都是 session-scoped 的：
+    - risk-snapshot.json 在 SessionStart 时被重置（session-start-reset-risk.py）
+    - files_touched 由 risk-tracker.py 在 PostToolUse Edit|Write 时追加
+    - git diff --cached 检测本 session 暂存的变更（少见但需要覆盖）
+
+    注意：不再使用 git diff --name-only（仓库全局状态），因为 build 残留等
+    pre-existing 脏文件会导致假阳性。
+    注意：不再检查 progress.json（与 mechanical_first_pass 重复调用 stop-check）。
+    D8 作为无条件硬门在 main() 中先于 candidate 检查执行。
+    """
+    # 条件 1: 本 session 有 Edit|Write（risk-tracker 记录的 files_touched）
+    risk_snapshot = REPO_ROOT / ".towow" / "state" / "risk-snapshot.json"
+    if risk_snapshot.exists():
+        try:
+            snap = json.loads(risk_snapshot.read_text(encoding="utf-8"))
+            if snap.get("files_touched"):
+                return True, "session_has_writes"
+            level = snap.get("risk_level", "R0")
+            if level not in ("R0", ""):
+                return True, f"risk_elevated_{level}"
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # 条件 2: 已暂存的变更（git add 后未 commit）
     try:
         result = subprocess.run(
             ["git", "diff", "--cached", "--name-only"],
@@ -178,29 +189,6 @@ def is_completion_candidate() -> tuple[bool, str]:
             return True, "staged_changes"
     except (subprocess.SubprocessError, OSError):
         pass
-
-    # 条件 3: 风险快照 R1+
-    risk_snapshot = REPO_ROOT / ".wow-harness" / "state" / "risk-snapshot.json"
-    if risk_snapshot.exists():
-        try:
-            risk = json.loads(risk_snapshot.read_text(encoding="utf-8"))
-            level = risk.get("risk_level", "R0")
-            if level not in ("R0", ""):
-                return True, f"risk_elevated_{level}"
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    # 条件 4: progress.json 有未验收产物
-    if INITIALIZER_AGENT.exists():
-        try:
-            result = subprocess.run(
-                ["python3", str(INITIALIZER_AGENT), "stop-check"],
-                capture_output=True, text=True, timeout=5,
-            )
-            if result.returncode == 1:  # has failing features
-                return True, "unfinished_features"
-        except (subprocess.SubprocessError, OSError):
-            pass
 
     return False, "no_completion_candidate"
 
@@ -219,20 +207,22 @@ def main() -> None:
         emit_metric("stop_pass", session_key, reason="already_blocked_once")
         sys.exit(0)
 
-    # ─── Step 0: ADR-044 §3.4.2 — Completion Candidate 门控 ───
-    # 没有 completion candidate → 静默放行，不注入任何文本
-    is_candidate, reason = is_completion_candidate()
-    if not is_candidate:
-        emit_metric("stop_pass", session_key, reason=reason)
-        sys.exit(0)
-
-    # ─── Step 1: D8.2 机械化第一关 ───
+    # ─── Step 0: D8.2 机械化第一关（无条件硬门） ───
     # progress.json 真相源 — 零 LLM 成本，零 self-eval bias
+    # D8 先于 candidate 检查执行：如果 progress.json 有 failing features，
+    # 必须阻断，不管 session 是否有 completion candidate。
     mech_code, mech_msg = mechanical_first_pass(session_key)
     if mech_code == 2:
         sys.stderr.write(mech_msg)
         mark_blocked(session_key)
         sys.exit(2)
+
+    # ─── Step 1: ADR-044 §3.4.2 — Completion Candidate 门控 ───
+    # 没有 completion candidate → 静默放行，不注入任何文本
+    is_candidate, reason = is_completion_candidate()
+    if not is_candidate:
+        emit_metric("stop_pass", session_key, reason=reason)
+        sys.exit(0)
 
     # ─── Step 2: 注入 L3 检查清单 ───
     if not EVALUATOR_MD.exists():

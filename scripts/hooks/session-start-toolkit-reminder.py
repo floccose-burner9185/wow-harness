@@ -9,7 +9,7 @@
 Why this exists:
 - v5 之后的 13 个 hooks 大部分是 transparent (auto-trigger，用户不需要管)
 - 但有 5 个入口需要用户主动跑：
-  1. 看 .wow-harness/state/proposals/ 里 trace-analyzer 的提议
+  1. 看 .towow/proposals/ 里 trace-analyzer 的提议
   2. 重建 magic doc（source 改了之后）
   3. 跑全量 freshness check
   4. 调 TOWOW_RECITATION_EVERY 频率
@@ -19,7 +19,7 @@ Why this exists:
   靠记忆容易遗忘 → 每 ~3 小时主动提醒一次
 
 Behavior:
-- SessionStart 时检查 .wow-harness/state/metrics/last-toolkit-reminder.txt
+- SessionStart 时检查 .towow/metrics/last-toolkit-reminder.txt
 - 文件不存在 OR (now - last_ts) > 3 hours → 注入提醒片段，写新时间戳
 - 否则静默 exit 0
 - 永远 exit 0 (advisory, never block)
@@ -35,7 +35,7 @@ import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-LAST_REMINDER_FILE = REPO_ROOT / ".wow-harness/state" / "metrics" / "last-toolkit-reminder.txt"
+LAST_REMINDER_FILE = REPO_ROOT / ".towow" / "metrics" / "last-toolkit-reminder.txt"
 
 DEFAULT_INTERVAL_SEC = 3 * 60 * 60  # 3 hours
 INTERVAL_SEC = int(os.environ.get("TOWOW_TOOLKIT_REMINDER_INTERVAL_SEC", DEFAULT_INTERVAL_SEC))
@@ -48,7 +48,7 @@ REMINDER_FRAGMENT = """
 
 ### 1. trace-analyzer 提议（SessionEnd 自动跑，但 propose 不自动落地）
 ```
-ls -lt .wow-harness/state/proposals/ | head -5
+ls -lt .towow/proposals/ | head -5
 ```
 如果有 confidence ≥ 0.8 的 finding，建议建 issue (`docs/issues/...`) 跟踪。
 
@@ -71,12 +71,12 @@ export TOWOW_RECITATION_EVERY=100  # 更稀疏
 
 ### 5. 累计 metrics（v5 hooks 的实际效果数据）
 ```
-cat .wow-harness/state/metrics/tool-call-counter.txt        # 总 tool 调用数
-wc -l .wow-harness/state/metrics/guard-events.jsonl         # guard 触发次数
-wc -l .wow-harness/state/metrics/stop-events.jsonl          # stop check 次数
-wc -l .wow-harness/state/metrics/tool-failures.jsonl        # tool 失败次数
-wc -l .wow-harness/state/metrics/initializer-events.jsonl   # WP init 次数
-ls .wow-harness/state/proposals/                            # trace-analyzer 提议数
+cat .towow/metrics/tool-call-counter.txt        # 总 tool 调用数
+wc -l .towow/metrics/guard-events.jsonl         # guard 触发次数
+wc -l .towow/metrics/stop-events.jsonl          # stop check 次数
+wc -l .towow/metrics/tool-failures.jsonl        # tool 失败次数
+wc -l .towow/metrics/initializer-events.jsonl   # WP init 次数
+ls .towow/proposals/                            # trace-analyzer 提议数
 ```
 
 [来源: ADR-038 §12 + 用户反馈 2026-04-07]

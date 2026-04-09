@@ -14,7 +14,7 @@ Why this exists:
 - Frequency: every 50 tool calls (configurable via TOWOW_RECITATION_EVERY)
 
 Behavior:
-- Increments .wow-harness/state/metrics/tool-call-counter.txt on every PreToolUse
+- Increments .towow/metrics/tool-call-counter.txt on every PreToolUse
 - On the Nth call, prints an Objective Recitation fragment (objective +
   unfinished features + Sprint reminder) to stdout — CC injects it as
   context for the upcoming tool call
@@ -32,8 +32,8 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-COUNTER_FILE = REPO_ROOT / ".wow-harness/state" / "metrics" / "tool-call-counter.txt"
-CURRENT_PROGRESS = REPO_ROOT / ".wow-harness/state" / "progress" / "current.json"
+COUNTER_FILE = REPO_ROOT / ".towow" / "metrics" / "tool-call-counter.txt"
+CURRENT_PROGRESS = REPO_ROOT / ".towow" / "progress" / "current.json"
 
 DEFAULT_RECITE_EVERY = 50
 RECITE_EVERY = int(os.environ.get("TOWOW_RECITATION_EVERY", DEFAULT_RECITE_EVERY))

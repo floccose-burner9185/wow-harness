@@ -50,19 +50,6 @@ INDEX_REL = Path(".claude") / "skills" / "lead" / "INDEX.md"
 INSTALL_LOG_REL = Path(".wow-harness") / "install-log.jsonl"
 TRUST_STATUS_REL = Path(".wow-harness") / "trust-status.json"
 
-# The one matcher entry WP-11 adds (AC 3/4: single entry, pipe-regex)
-WP11_MATCHER = {
-    "matcher": "Read|Bash",
-    "hooks": [
-        {
-            "type": "command",
-            "command": "cd \"$(scripts/hooks/find-project-root.sh)\" && python3 scripts/hooks/sanitize-on-read.py",
-            "timeout": 10,
-        }
-    ],
-}
-
-
 def _log_event(project_root: Path, event: str, details: str = ""):
     """Append to install-log.jsonl."""
     log_path = project_root / INSTALL_LOG_REL
@@ -145,20 +132,89 @@ def _copy_bundle(target_root: Path, dry_run: bool = False) -> bool:
     return copied_count > 0
 
 
+# ─── Scaffold + .gitignore (Gap 1 fix) ───
+
+SCAFFOLD_DIR = REPO_ROOT / "templates" / "scaffold"
+GITIGNORE_APPEND = SCAFFOLD_DIR / ".gitignore.append"
+
+
+def _copy_scaffold(target_root: Path, dry_run: bool = False) -> list[str]:
+    """Copy project scaffold directories to target (idempotent).
+
+    Creates docs/issues/, docs/decisions/tasks/, .towow/state/, etc.
+    Only creates directories and copies files that don't already exist.
+    Returns list of created paths (relative to target_root).
+    """
+    created = []
+    if not SCAFFOLD_DIR.is_dir():
+        return created
+
+    for src_file in SCAFFOLD_DIR.rglob("*"):
+        # Skip the .gitignore.append — handled separately
+        if src_file.name == ".gitignore.append":
+            continue
+        rel = src_file.relative_to(SCAFFOLD_DIR)
+        dst = target_root / rel
+
+        if src_file.is_dir():
+            if not dst.exists():
+                if not dry_run:
+                    dst.mkdir(parents=True, exist_ok=True)
+                created.append(str(rel) + "/")
+        elif src_file.is_file():
+            if not dst.exists():
+                if not dry_run:
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src_file, dst)
+                created.append(str(rel))
+
+    return created
+
+
+def _append_gitignore(target_root: Path, dry_run: bool = False) -> bool:
+    """Append wow-harness runtime entries to target .gitignore (idempotent).
+
+    Reads .gitignore.append from scaffold template and appends any lines
+    not already present in the target's .gitignore.
+    Returns True if entries were added (or would be in dry_run).
+    """
+    if not GITIGNORE_APPEND.exists():
+        return False
+
+    append_lines = GITIGNORE_APPEND.read_text().strip().splitlines()
+    target_gitignore = target_root / ".gitignore"
+
+    existing = set()
+    if target_gitignore.exists():
+        existing = set(target_gitignore.read_text().splitlines())
+
+    new_lines = [line for line in append_lines if line not in existing]
+    if not new_lines:
+        return False
+
+    if dry_run:
+        return True
+
+    with target_gitignore.open("a") as f:
+        f.write("\n")
+        for line in new_lines:
+            f.write(line + "\n")
+
+    return True
+
+
 def _rewrite_hook_paths(settings_path: Path, target_root: Path) -> bool:
-    """Replace hardcoded wow-harness paths in settings.json with target project paths.
+    """Legacy path rewrite for settings.json with hardcoded absolute paths.
 
-    The source settings.json has absolute paths to REPO_ROOT (wow-harness).
-    After copying to a target project, these must point to the target's own
-    scripts/hooks/ directory instead.
-
-    Returns True if any paths were rewritten.
+    With relative paths (Gap 2 fix), this is a no-op for new installs.
+    Kept for backward compatibility with older wow-harness versions that
+    shipped absolute paths.
     """
     content = settings_path.read_text()
     src_prefix = str(REPO_ROOT)
     dst_prefix = str(target_root.resolve())
     if src_prefix == dst_prefix:
-        return False  # installing to self, no rewrite needed
+        return False
     if src_prefix not in content:
         return False
     new_content = content.replace(src_prefix, dst_prefix)
@@ -166,38 +222,96 @@ def _rewrite_hook_paths(settings_path: Path, target_root: Path) -> bool:
     return True
 
 
-def _atomic_append_matcher(settings_path: Path, dry_run: bool = False) -> bool:
-    """Step 5b: append WP-11 matcher to settings.json atomically.
+def _hook_signature(hook: dict) -> str:
+    """Extract a stable identity for a hook command.
 
-    Returns True if the matcher was added (or would be in dry_run).
-    Returns False if already present (idempotent skip).
+    Uses the script filename from the command (e.g. "risk-tracker.py")
+    as the signature, since paths may vary between source and target.
     """
-    if not settings_path.exists():
-        print(f"settings.json not found at {settings_path}", file=sys.stderr)
-        return False
+    cmd = hook.get("command", "")
+    # Extract the last python3/bash script name from the command
+    for part in reversed(cmd.split()):
+        if part.endswith((".py", ".sh")):
+            return part.split("/")[-1]
+    return cmd
 
-    settings = json.loads(settings_path.read_text())
-    hooks = settings.setdefault("hooks", {})
-    pre_tool_use = hooks.setdefault("PreToolUse", [])
 
-    # Idempotency check: does a Read|Bash or Bash|Read matcher already exist?
-    target_set = {"Read", "Bash"}
-    for entry in pre_tool_use:
-        existing_matcher = entry.get("matcher", "")
-        existing_set = set(existing_matcher.split("|"))
-        if existing_set == target_set:
-            # Check if it points to sanitize-on-read.py
+def _merge_hooks(settings_path: Path, dry_run: bool = False) -> list[str]:
+    """Step 5b: merge source hooks into target settings.json.
+
+    Compares source (wow-harness) and target settings.json hook registrations.
+    For each hook stage (PostToolUse, PreToolUse, etc.), detects hooks present
+    in source but missing in target, and appends them.
+
+    Idempotent: hooks already present (matched by script filename) are skipped.
+    Returns list of added hook descriptions.
+    """
+    src_settings_path = REPO_ROOT / SETTINGS_REL
+    if not src_settings_path.exists() or not settings_path.exists():
+        return []
+
+    src_settings = json.loads(src_settings_path.read_text())
+    dst_settings = json.loads(settings_path.read_text())
+
+    src_hooks = src_settings.get("hooks", {})
+    dst_hooks = dst_settings.setdefault("hooks", {})
+
+    added = []
+
+    for stage, src_entries in src_hooks.items():
+        dst_entries = dst_hooks.setdefault(stage, [])
+
+        # Build set of existing hook signatures in target (per matcher)
+        existing_sigs: dict[str, set[str]] = {}
+        for entry in dst_entries:
+            matcher = entry.get("matcher", "*")
+            sigs = existing_sigs.setdefault(matcher, set())
             for hook in entry.get("hooks", []):
-                if "sanitize-on-read.py" in hook.get("command", ""):
-                    return False  # already installed, idempotent skip
+                sigs.add(_hook_signature(hook))
 
-    if dry_run:
-        return True
+        for src_entry in src_entries:
+            matcher = src_entry.get("matcher", "*")
+            target_sigs = existing_sigs.get(matcher, set())
 
-    # Append the new entry
-    pre_tool_use.append(WP11_MATCHER)
-    settings_path.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
-    return True
+            # Find hooks in this source entry that are missing from target
+            missing_hooks = []
+            for hook in src_entry.get("hooks", []):
+                sig = _hook_signature(hook)
+                if sig not in target_sigs:
+                    missing_hooks.append(hook)
+
+            if not missing_hooks:
+                continue
+
+            if dry_run:
+                for hook in missing_hooks:
+                    added.append(f"{stage} {matcher}: {_hook_signature(hook)}")
+                continue
+
+            # Find or create matching entry in target
+            target_entry = None
+            for entry in dst_entries:
+                if entry.get("matcher") == matcher:
+                    target_entry = entry
+                    break
+
+            if target_entry is None:
+                # New matcher — append entire entry
+                dst_entries.append(src_entry)
+                for hook in missing_hooks:
+                    added.append(f"{stage} {matcher}: {_hook_signature(hook)}")
+            else:
+                # Existing matcher — append missing hooks
+                for hook in missing_hooks:
+                    target_entry["hooks"].append(hook)
+                    added.append(f"{stage} {matcher}: {_hook_signature(hook)}")
+
+    if added and not dry_run:
+        settings_path.write_text(
+            json.dumps(dst_settings, indent=2, ensure_ascii=False) + "\n"
+        )
+
+    return added
 
 
 def _fill_index_slot(project_root: Path, dry_run: bool = False) -> bool:
@@ -301,26 +415,49 @@ def main() -> int:
         else:
             print("  bundle files already up to date (idempotent skip)")
 
+        # 5a-2: copy project scaffold (docs/issues/, docs/decisions/, .towow/state/, etc.)
+        scaffold_created = _copy_scaffold(project_root, dry_run=args.dry_run)
+        if scaffold_created:
+            action = "would create" if args.dry_run else "created"
+            print(f"  {action} scaffold: {', '.join(scaffold_created[:5])}"
+                  + (f" (+{len(scaffold_created)-5} more)" if len(scaffold_created) > 5 else ""))
+            if not args.dry_run:
+                _log_event(project_root, "scaffold_created", f"paths={len(scaffold_created)}")
+        else:
+            print("  scaffold directories already exist (idempotent skip)")
+
+        # 5a-3: append .gitignore entries for runtime directories
+        gitignore_appended = _append_gitignore(project_root, dry_run=args.dry_run)
+        if gitignore_appended:
+            action = "would append" if args.dry_run else "appended"
+            print(f"  {action} wow-harness runtime entries to .gitignore")
+            if not args.dry_run:
+                _log_event(project_root, "gitignore_appended")
+        else:
+            print("  .gitignore entries already present (idempotent skip)")
+
         settings_path = project_root / SETTINGS_REL
 
-        # 5a-2: rewrite hardcoded paths in settings.json
+        # 5a-4: rewrite hardcoded paths in settings.json (legacy compat)
         if not args.dry_run and settings_path.exists():
             rewritten = _rewrite_hook_paths(settings_path, project_root)
             if rewritten:
                 print(f"  rewrote hook paths → {project_root}")
 
-        # 5b: atomic append matcher
-        added = _atomic_append_matcher(settings_path, dry_run=args.dry_run)
-        action = "would add" if args.dry_run else "added"
-        if added:
-            print(f"  {action} Read|Bash matcher to {settings_path}")
+        # 5b: merge hooks from source to target settings.json
+        merged = _merge_hooks(settings_path, dry_run=args.dry_run)
+        if merged:
+            action = "would add" if args.dry_run else "added"
+            print(f"  {action} {len(merged)} hooks:")
+            for desc in merged:
+                print(f"    + {desc}")
             if not args.dry_run:
                 count = _count_commands(settings_path)
                 print(f"  settings.json command count: {count}")
-                _log_event(project_root, "matcher_added", f"count={count}")
+                _log_event(project_root, "hooks_merged", f"added={len(merged)} total={count}")
                 itt.refresh(REPO_ROOT)
         else:
-            print(f"  Read|Bash matcher already in {settings_path} (idempotent skip)")
+            print(f"  all hooks already in {settings_path} (idempotent skip)")
 
         # 5c: INDEX slot fill
         filled = _fill_index_slot(project_root, dry_run=args.dry_run)

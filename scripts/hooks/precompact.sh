@@ -30,7 +30,7 @@ PRESERVE
 # [来源: Cursor — 丢失 reasoning traces 导致 30% 性能下降]
 # 在 compact 后的新上下文末尾追加原始目标，防止注意力漂移。
 # KV cache 友好——只追加到末尾，不重排前文。
-PROGRESS_FILE="$REPO_ROOT/.wow-harness/state/progress/current.json"
+PROGRESS_FILE="$REPO_ROOT/.towow/progress/current.json"
 if [ -f "$PROGRESS_FILE" ]; then
     echo ""
     echo "## Objective Recitation (v4 D9)"
