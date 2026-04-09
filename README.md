@@ -1,53 +1,84 @@
 # wow-harness
 
-A local AI development harness for Claude Code. Turns your repo into a fail-closed development environment where AI agents follow gates, get reviewed, and can't silently skip steps.
+> "How do you let AI handle so much development with so little supervision?"
 
-Born from 6 months of production use on the [Towow](https://towow.net) project. Everything project-specific has been extracted into structural slots you fill with your own context.
+This is the answer.
 
-## What it does
+wow-harness is a governance layer for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). It makes AI agents reliable enough that you can set direction, walk away, and trust the work actually lands — with review gates, completion verification, and mechanical enforcement that no amount of prompting can replicate.
 
-**Problem**: Claude Code agents are brilliant but unreliable at process. They skip review gates, claim tests pass when they didn't run them, and drift from plans mid-execution.
+## The Problem
 
-**Solution**: A 5-layer governance stack that runs locally, enforced by hooks and skills:
+Claude Code is remarkably capable. But left unsupervised, it has structural biases:
 
-| Layer | What | Examples |
-|-------|------|---------|
-| L0 | Infrastructure | MANIFEST, sanitize, templates |
-| L1 | Hooks | 16 PreToolUse/PostToolUse/Session hooks |
-| L2 | Checks | 15 automated validators (API types, doc freshness, security...) |
-| L3 | Rules | Path-scoped context injection (backend routes, closure semantics...) |
-| L4 | Skills | 16 specialized agent behaviors (architecture, plan-locking, bug triage...) |
-| L5 | Decisions | ADR/PLAN/REVIEW document templates |
+- **Claims completion prematurely** — "all tests pass" (didn't run them)
+- **Skips review** — "this change is simple enough" (it wasn't)
+- **Drifts from plans** — starts fixing one bug, ends up refactoring three files
+- **Self-evaluation bias** — asks itself "did I do a good job?", answers "yes"
+
+You end up supervising more than you saved in development time. The 80% it does well makes the 20% it silently drops even harder to catch.
+
+## The Insight
+
+```
+CLAUDE.md instruction compliance:  ~20%
+PreToolUse hook enforcement:       100%
+```
+
+Instructions don't reliably change AI behavior. Mechanical constraints do.
+
+A review agent told "don't modify files" obeys ~70% of the time. A review agent whose tool manifest doesn't list Edit/Write obeys 100% of the time — it physically can't call what isn't there.
+
+wow-harness applies this principle everywhere: if it matters, enforce it with a hook, not a sentence.
+
+## What Changes
+
+| Without wow-harness | With wow-harness |
+|---|---|
+| "Did you run the tests?" → "Yes" (didn't) | Mechanical gate checks `progress.json` — can't fake evidence |
+| AI stops mid-chat, injects completion checklist | Stop hook parses session transcript — only triggers when uncommitted writes exist |
+| Review agent "helpfully" edits what it reviews | Review agent physically cannot call Edit/Write (schema-level isolation) |
+| "This PR is simple, let's skip review" | Gates 2/4/6/8 mechanically require independent review — no exceptions |
+| Parallel AI sessions contaminate each other | Each session's scope is isolated via its own transcript file |
+| Agent drifts into unrelated fixes | Context routing injects domain-specific rules only for files being edited |
+
+## How It Works
+
+### Hooks: enforcement at the moment of action
+
+16 hooks across 7 lifecycle stages. They intercept *as things happen*, not after:
+
+```
+SessionStart  →  Load context, reset risk state, surface tools
+PreToolUse    →  Block unsafe deploys, gate review agents, sanitize reads
+PostToolUse   →  Route context on edit, detect loops, track risk
+Stop          →  Verify completion candidate exists (transcript × git diff)
+SessionEnd    →  Reflect, analyze traces, persist progress
+```
 
 ### The 8-Gate State Machine
 
-Every change flows through 9 gates (0-8). Gates 2/4/6/8 are review gates that **must** use independent-context reviewers (TeamCreate, not Agent). The lead skill enforces this mechanically -- no "this one's simple, let's skip review."
+Every significant change flows through gates. Even-numbered gates require independent review — not the same agent checking its own work:
 
 ```
-Gate 0 (Problem) -> Gate 1 (Design) -> Gate 2* (Review)
-  -> Gate 3 (Plan) -> Gate 4* (Review+Lock)
-  -> Gate 5 (Task Split) -> Gate 6* (Review)
-  -> Gate 7 (Execute+Log) -> Gate 8* (Final Review)
+G0 Problem  →  G1 Design  →  G2 Review*
+  →  G3 Plan  →  G4 Review+Lock*
+  →  G5 Tasks  →  G6 Review*
+  →  G7 Execute+Log  →  G8 Final Review*
 
-* = TeamCreate mandatory
+* = Independent reviewer (separate context, read-only tools)
 ```
 
-### 16 Skills
+### Automated Checks
 
-| Category | Skills |
-|----------|--------|
-| Governance | `lead` (state machine), `arch` (architecture), `plan-lock`, `task-arch` |
-| Engineering | `harness-dev`, `harness-eng`, `harness-eng-test`, `harness-ops` |
-| Domain | `harness-voice` (project expression), `harness-lab` (experiments) |
-| Safety | `guardian-fixer` (8-gate bug repair), `crystal-learn` (failure pattern extraction) |
-| Automation | `bug-pipeline` (bug->PR), `bug-triage` (structured triage) |
-| Meta | `skill-discovery` (finds new skills from your work patterns), `harness-dev-handoff` (AI handoff) |
+15 validators run on file changes: API type consistency, doc freshness, security patterns, fragment integrity, hook registration, and more. They catch drift before it compounds.
 
-Skills with `{{PLACEHOLDER}}` structural slots are designed to be filled with your project's worldview, primitives, and constraints during installation.
+### Skills
+
+16 specialized behaviors — from architecture design (`arch`) to failure pattern extraction (`crystal-learn`) to structured bug triage (`bug-triage`). Skills install judgment frameworks, not rule lists, so the agent can navigate situations the skill didn't explicitly cover.
+
+Each skill has `{{PLACEHOLDER}}` structural slots designed to be filled with your project's context during installation.
 
 ## Install
-
-### Quick start (drop-in)
 
 ```bash
 git clone https://github.com/NatureBlueee/wow-harness.git
@@ -55,57 +86,50 @@ cd wow-harness
 python3 scripts/install/phase2_auto.py /path/to/your/project --tier drop-in
 ```
 
-### Three tiers
+### Three Tiers
 
-| Tier | What it reads | Best for |
-|------|--------------|----------|
-| `drop-in` | Nothing beyond the bundle | Try it out, minimal trust |
-| `adapt` | Your README + docs (first 50KB) | Customize skills to your project |
-| `mine` | Named project transcripts | Deep customization from your work history |
+| Tier | Trust level | What happens |
+|------|-------------|-------------|
+| **drop-in** | Minimal | Installs hooks + skills as-is. Try it, see what happens. |
+| **adapt** | Medium | Reads your README + docs, customizes skills to your project. |
+| **mine** | Full | Reads your work transcripts, deeply adapts to your patterns. |
 
-### What gets installed
-
-- `.claude/skills/` -- 16 skill definitions
-- `.claude/rules/` -- path-scoped context rules
-- `scripts/hooks/` -- Claude Code hook scripts
-- `scripts/checks/` -- automated validators
-- `.claude/settings.json` -- hook registrations (atomic append, won't clobber)
-
-## Key design decisions
-
-1. **Fail-closed, not fail-open**: Unknown states block progress. An unhelpful gate is safer than a skipped gate.
-2. **Schema-level isolation for reviewers**: Review agents physically cannot call Edit/Write/Bash (frontmatter tool whitelist), not just "please don't."
-3. **Hooks over instructions**: `CLAUDE.md` compliance is ~20%. PreToolUse hooks are 100%. We enforce at the hook layer.
-4. **Soul-writing methodology**: Skills aren't rule lists. They install tension triangles, judgment personas, and bidirectional calibration -- so the agent can navigate situations the skill didn't explicitly cover.
-5. **Structural slots over deletion**: Project-specific content becomes `{{PLACEHOLDER}}` with meta-instructions (what to put, why it matters, how to discover it), not blank space.
-
-## Project structure
+### What Gets Installed
 
 ```
-wow-harness/
-  .claude/
-    skills/          # 16 skill definitions (SKILL.md each)
-    rules/           # 6 path-scoped context rules
-    settings.json    # Hook registrations
-  scripts/
-    hooks/           # 16 Claude Code hooks
-    checks/          # 15 automated validators
-    install/         # 3-tier installer
-  schemas/           # MANIFEST + validation
-  reference/         # Towow governance snapshot (provenance)
-  docs/              # Decision templates
+your-project/
+├── .claude/
+│   ├── settings.json    # Hook registrations (appends, won't clobber)
+│   ├── skills/          # 16 agent behavior definitions
+│   └── rules/           # Path-scoped context (auto-loaded by file path)
+├── scripts/
+│   ├── hooks/           # 16 lifecycle hooks
+│   └── checks/          # 15 automated validators
+└── CLAUDE.md            # Governance guide (generated, yours to edit)
 ```
+
+The installer is idempotent — run it twice, get the same result.
+
+## Design Principles
+
+1. **Hooks over instructions** — If compliance matters, don't ask. Enforce.
+2. **Schema-level isolation** — Review agents' tool manifests exclude write tools. Not "please don't" — *can't*.
+3. **Fail-open where safe** — A hook that can't read its data injects *more* checks, not fewer. The failure mode is always "too cautious," never "silently skipped."
+4. **Session isolation** — Completion detection uses per-session transcript parsing. No shared mutable state between parallel sessions.
+5. **Structural slots over blank space** — Project-specific content becomes `{{PLACEHOLDER}}` with meta-instructions (what to put, why it matters, how to discover it), not empty fields you forget to fill.
 
 ## Requirements
 
-- Claude Code CLI (logged in)
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI
 - Python 3.9+
 - Git
+
+## Origin
+
+Born from 6 months of production use on [Towow](https://towow.net), an agent collaboration protocol. The governance layer kept proving independently valuable — every AI-assisted project needs it, not just ours. So we extracted it.
+
+The hooks, gates, and isolation patterns were designed by getting burned first, then building the guard. Every rule in this system exists because an AI agent found a creative way to not follow the previous rule.
 
 ## License
 
 MIT
-
-## Origin
-
-Extracted from the [Towow](https://towow.net) agent collaboration protocol project. The harness layer proved independently valuable -- every AI-assisted project needs governance, not just ours.
