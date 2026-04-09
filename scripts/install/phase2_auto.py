@@ -145,6 +145,27 @@ def _copy_bundle(target_root: Path, dry_run: bool = False) -> bool:
     return copied_count > 0
 
 
+def _rewrite_hook_paths(settings_path: Path, target_root: Path) -> bool:
+    """Replace hardcoded wow-harness paths in settings.json with target project paths.
+
+    The source settings.json has absolute paths to REPO_ROOT (wow-harness).
+    After copying to a target project, these must point to the target's own
+    scripts/hooks/ directory instead.
+
+    Returns True if any paths were rewritten.
+    """
+    content = settings_path.read_text()
+    src_prefix = str(REPO_ROOT)
+    dst_prefix = str(target_root.resolve())
+    if src_prefix == dst_prefix:
+        return False  # installing to self, no rewrite needed
+    if src_prefix not in content:
+        return False
+    new_content = content.replace(src_prefix, dst_prefix)
+    settings_path.write_text(new_content)
+    return True
+
+
 def _atomic_append_matcher(settings_path: Path, dry_run: bool = False) -> bool:
     """Step 5b: append WP-11 matcher to settings.json atomically.
 
@@ -281,6 +302,12 @@ def main() -> int:
             print("  bundle files already up to date (idempotent skip)")
 
         settings_path = project_root / SETTINGS_REL
+
+        # 5a-2: rewrite hardcoded paths in settings.json
+        if not args.dry_run and settings_path.exists():
+            rewritten = _rewrite_hook_paths(settings_path, project_root)
+            if rewritten:
+                print(f"  rewrote hook paths → {project_root}")
 
         # 5b: atomic append matcher
         added = _atomic_append_matcher(settings_path, dry_run=args.dry_run)
