@@ -9,6 +9,8 @@
 #   1. Copy shared hook scripts from Towow → wow-harness (skip Towow-only files)
 #   2. Replace find-towow-root.sh references → find-project-root.sh in copied files
 #   3. Compare settings.json hook registrations and report differences
+#   4. Sync shared scripts (guard-feedback.py, deploy-guard.py, context_router.py, guard_router.py)
+#   5. Sync context-fragments/ directory
 #
 # Usage:
 #   ./scripts/sync-from-upstream.sh                     # default Towow path
@@ -206,8 +208,8 @@ fi
 echo ""
 echo "── Step 4: Other shared files ──"
 
-# guard-feedback.py and deploy-guard.py are in scripts/ root, not hooks/
-for shared_file in "guard-feedback.py" "deploy-guard.py"; do
+# Scripts in scripts/ root that are shared with Towow
+for shared_file in "guard-feedback.py" "deploy-guard.py" "context_router.py" "guard_router.py"; do
     src="$UPSTREAM/scripts/$shared_file"
     dst="$HARNESS_ROOT/scripts/$shared_file"
     if [ -f "$src" ] && [ -f "$dst" ]; then
@@ -223,6 +225,51 @@ for shared_file in "guard-feedback.py" "deploy-guard.py"; do
         echo "  ⚠ MISSING in harness: scripts/$shared_file"
     fi
 done
+
+# ─── Step 5: Sync context-fragments/ directory ───
+echo ""
+echo "── Step 5: Context fragments ──"
+FRAG_COPIED=0
+FRAG_UNCHANGED=0
+
+src_frag_dir="$UPSTREAM/scripts/context-fragments"
+dst_frag_dir="$HARNESS_ROOT/scripts/context-fragments"
+
+if [ -d "$src_frag_dir" ]; then
+    if [ ! -d "$dst_frag_dir" ]; then
+        if $DRY_RUN; then
+            echo "  WOULD CREATE: scripts/context-fragments/"
+        else
+            mkdir -p "$dst_frag_dir"
+            echo "  CREATED: scripts/context-fragments/"
+        fi
+    fi
+
+    for src_frag in "$src_frag_dir/"*; do
+        [ -f "$src_frag" ] || continue
+        frag_name="$(basename "$src_frag")"
+        dst_frag="$dst_frag_dir/$frag_name"
+
+        if [ -f "$dst_frag" ]; then
+            if diff -q "$src_frag" "$dst_frag" > /dev/null 2>&1; then
+                ((FRAG_UNCHANGED++))
+                continue
+            fi
+        fi
+
+        if $DRY_RUN; then
+            echo "  WOULD COPY: context-fragments/$frag_name"
+        else
+            cp "$src_frag" "$dst_frag"
+            echo "  COPIED: context-fragments/$frag_name"
+        fi
+        ((FRAG_COPIED++))
+    done
+
+    echo "  Results: $FRAG_COPIED copied, $FRAG_UNCHANGED unchanged"
+else
+    echo "  ⚠ Upstream context-fragments/ not found"
+fi
 
 echo ""
 echo "=== Sync complete ==="
