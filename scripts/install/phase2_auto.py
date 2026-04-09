@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -92,6 +93,56 @@ def _check_trust_status(project_root: Path, accept_degraded: bool) -> bool:
         )
         return False
     return True
+
+
+# Bundle directories to copy to target project
+BUNDLE_DIRS = [".claude", ".wow-harness", "scripts", "schemas"]
+# Files/dirs to exclude from bundle copy (install-specific, not needed in target)
+BUNDLE_EXCLUDE = {
+    "__pycache__", ".git", "install-trust-token.json",
+    "reference",  # snapshot is source material, not runtime
+}
+
+
+def _copy_bundle(target_root: Path, dry_run: bool = False) -> bool:
+    """Step 5a: copy bundle dirs from wow-harness to target project.
+
+    Copies .claude/, .wow-harness/, scripts/, schemas/ to target.
+    Idempotent: only copies files that don't exist or are older.
+    Returns True if any files were copied.
+    """
+    copied_count = 0
+    for dir_name in BUNDLE_DIRS:
+        src_dir = REPO_ROOT / dir_name
+        dst_dir = target_root / dir_name
+        if not src_dir.is_dir():
+            continue
+
+        for src_file in src_dir.rglob("*"):
+            if not src_file.is_file():
+                continue
+            # Skip excluded
+            if any(part in BUNDLE_EXCLUDE for part in src_file.parts):
+                continue
+
+            rel = src_file.relative_to(REPO_ROOT)
+            dst_file = target_root / rel
+
+            # Idempotent: skip if dst exists and is same size + newer
+            if dst_file.exists():
+                if (dst_file.stat().st_size == src_file.stat().st_size
+                        and dst_file.stat().st_mtime >= src_file.stat().st_mtime):
+                    continue
+
+            if dry_run:
+                copied_count += 1
+                continue
+
+            dst_file.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src_file, dst_file)
+            copied_count += 1
+
+    return copied_count > 0
 
 
 def _atomic_append_matcher(settings_path: Path, dry_run: bool = False) -> bool:
@@ -217,6 +268,18 @@ def main() -> int:
 
     # Step 5: install to each project
     for project_root in project_paths:
+        print(f"\nInstalling to {project_root} (tier={args.tier})...")
+
+        # 5a: copy bundle to target
+        action = "would copy" if args.dry_run else "copied"
+        bundle_copied = _copy_bundle(project_root, dry_run=args.dry_run)
+        if bundle_copied:
+            print(f"  {action} bundle files (.claude/ .wow-harness/ scripts/ schemas/)")
+            if not args.dry_run:
+                _log_event(project_root, "bundle_copied", f"tier={args.tier}")
+        else:
+            print("  bundle files already up to date (idempotent skip)")
+
         settings_path = project_root / SETTINGS_REL
 
         # 5b: atomic append matcher
