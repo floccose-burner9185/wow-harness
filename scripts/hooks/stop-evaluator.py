@@ -8,10 +8,10 @@
   只有存在 completion candidate 时才触发 L3 检查。
 
 Completion candidate 定义（§3.4.2）：
-  1. git diff --name-only 非空（有未提交的变更）
-  2. git diff --cached --name-only 非空（有已暂存的变更）
-  3. 风险快照显示 R1+
-  4. progress.json 存在未验收产物
+  1. 本 session transcript 中有 Edit/Write/NotebookEdit 工具调用
+  2. 且这些文件在 git 工作区有未提交变更（transcript ∩ git_dirty）
+  3. 或有已暂存的变更（git diff --cached）
+  4. progress.json 存在未验收产物（D8 机械化第一关）
 
 不是 completion candidate 的场景：
   纯聊天、纯研究、纯规划、纯 Read/Grep 浏览 → 静默放行。
@@ -149,36 +149,89 @@ def mechanical_first_pass(session_key: str) -> tuple[int, str]:
     return 2, msg
 
 
-def is_completion_candidate() -> tuple[bool, str]:
-    """ADR-044 §3.4.2 — 机械判定是否存在 completion candidate。
+def extract_edited_files(transcript_path: str) -> set[str] | None:
+    """从 CC transcript JSONL 提取本 session 写过的文件路径。
+
+    Returns:
+      set[str] — repo-relative paths of files written by this session
+      None — transcript 不可读 → 调用方应 fail-open
+
+    CC transcript 天然 session 隔离：每个 session 独立 .jsonl 文件。
+    相比 risk-snapshot.json（repo 级共享状态），不会被并行 session 污染，
+    也不受 /clear 影响（/clear 不清 transcript）。
+    """
+    WRITE_TOOLS = {"Edit", "Write", "NotebookEdit"}
+    if not transcript_path:
+        return None
+    try:
+        files: set[str] = set()
+        with open(transcript_path, "r", encoding="utf-8") as f:
+            for line in f:
+                rec = json.loads(line)
+                msg = rec.get("message", {})
+                if msg.get("role") != "assistant":
+                    continue
+                for block in msg.get("content", []):
+                    if not isinstance(block, dict):
+                        continue
+                    if block.get("type") == "tool_use" and block.get("name") in WRITE_TOOLS:
+                        fp = block.get("input", {}).get("file_path", "")
+                        if fp:
+                            try:
+                                rel = str(Path(fp).relative_to(REPO_ROOT))
+                                files.add(rel)
+                            except ValueError:
+                                pass
+        return files
+    except (OSError, json.JSONDecodeError):
+        return None  # fail-open：读不到 transcript 时由调用方决定
+
+
+def is_completion_candidate(transcript_path: str) -> tuple[bool, str]:
+    """ADR-044 §3.4.2 — session-scoped completion candidate 判定。
 
     返回 (is_candidate, reason)。
     reason 用于 metrics，不注入 agent context。
 
-    所有条件都是 session-scoped 的：
-    - risk-snapshot.json 在 SessionStart 时被重置（session-start-reset-risk.py）
-    - files_touched 由 risk-tracker.py 在 PostToolUse Edit|Write 时追加
-    - git diff --cached 检测本 session 暂存的变更（少见但需要覆盖）
+    核心逻辑：transcript_writes ∩ git_dirty 交集。
+    - transcript 天然 session 隔离（每个 CC session 独立 .jsonl）
+    - 只提取 Edit/Write/NotebookEdit tool_use（精确、无 grep 假阳性）
+    - git_dirty 过滤已 commit 的文件
+    - 交集同时排除两类假阳性
 
-    注意：不再使用 git diff --name-only（仓库全局状态），因为 build 残留等
-    pre-existing 脏文件会导致假阳性。
-    注意：不再检查 progress.json（与 mechanical_first_pass 重复调用 stop-check）。
-    D8 作为无条件硬门在 main() 中先于 candidate 检查执行。
+    场景覆盖：
+    - 纯聊天/研究 → transcript 无写操作 → 放行
+    - 编辑后已全部 commit → 交集空 → 放行
+    - 编辑后未 commit → 交集非空 → 触发 completion review
+    - pre-existing 脏文件 → 不在 transcript → 不触发
+    - /clear 后首条消息 → transcript 无写操作 → 放行
+    - 并行 session → 各自 transcript 独立 → 不互相污染
     """
-    # 条件 1: 本 session 有 Edit|Write（risk-tracker 记录的 files_touched）
-    risk_snapshot = REPO_ROOT / ".towow" / "state" / "risk-snapshot.json"
-    if risk_snapshot.exists():
-        try:
-            snap = json.loads(risk_snapshot.read_text(encoding="utf-8"))
-            if snap.get("files_touched"):
-                return True, "session_has_writes"
-            level = snap.get("risk_level", "R0")
-            if level not in ("R0", ""):
-                return True, f"risk_elevated_{level}"
-        except (json.JSONDecodeError, OSError):
-            pass
+    # Step 1: 从 transcript 提取本 session 写过的文件
+    session_files = extract_edited_files(transcript_path)
+    if session_files is None:
+        return True, "transcript_unreadable_failopen"  # fail-open
+    if not session_files:
+        return False, "no_session_writes"
 
-    # 条件 2: 已暂存的变更（git add 后未 commit）
+    # Step 2: 与 git dirty 状态取交集
+    git_dirty: set[str] = set()
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-only"],
+            capture_output=True, text=True, timeout=5,
+            cwd=str(REPO_ROOT),
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            git_dirty = set(result.stdout.strip().splitlines())
+    except (subprocess.SubprocessError, OSError):
+        pass
+
+    uncommitted = session_files & git_dirty
+    if uncommitted:
+        return True, "uncommitted_session_changes"
+
+    # Step 3: 已暂存但未 commit（git add 后未 commit）
     try:
         result = subprocess.run(
             ["git", "diff", "--cached", "--name-only"],
@@ -190,7 +243,7 @@ def is_completion_candidate() -> tuple[bool, str]:
     except (subprocess.SubprocessError, OSError):
         pass
 
-    return False, "no_completion_candidate"
+    return False, "all_committed"
 
 
 def main() -> None:
@@ -219,7 +272,7 @@ def main() -> None:
 
     # ─── Step 1: ADR-044 §3.4.2 — Completion Candidate 门控 ───
     # 没有 completion candidate → 静默放行，不注入任何文本
-    is_candidate, reason = is_completion_candidate()
+    is_candidate, reason = is_completion_candidate(payload.get("transcript_path", ""))
     if not is_candidate:
         emit_metric("stop_pass", session_key, reason=reason)
         sys.exit(0)
