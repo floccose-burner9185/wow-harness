@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>wow-harness 在 Towow 的实践</title>
+<style>
+  :root {
+    --bg: #fafaf7;
+    --card: #ffffff;
+    --ink: #1a1a1a;
+    --muted: #6b6b6b;
+    --line: #d8d8d4;
+    --rule: #e6e6e2;
+    --user: #fff4d6;       --user-bd: #d97706;
+    --work: #dceefb;       --work-bd: #1d4ed8;
+    --review: #fde2ea;     --review-bd: #be123c;
+    --v1: #dceefb;         --v1-bd: #1d4ed8;
+    --v2: #fff4d6;         --v2-bd: #d97706;
+    --v3: #d6f0d8;         --v3-bd: #15803d;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.55;
+  }
+  .page { max-width: 1180px; margin: 0 auto; padding: 56px 40px 96px; }
+  h1 { font-size: 30px; margin: 0 0 10px; letter-spacing: -0.5px; }
+  .lead { color: var(--muted); font-size: 14px; margin: 0 0 12px; }
+  .meta { color: #888; font-size: 12px; margin: 0 0 28px; }
+  h2 {
+    font-size: 20px; font-weight: 700;
+    margin: 56px 0 20px; padding-bottom: 10px;
+    border-bottom: 1px solid var(--rule);
+  }
+  h2 .num { color: #999; font-weight: 500; margin-right: 8px; }
+
+  /* ======= 图 1：横向 8 关流程 ======= */
+  .flow {
+    display: flex; align-items: stretch; gap: 6px;
+    flex-wrap: wrap;
+    padding: 8px 0 0;
+  }
+  .node {
+    flex: 1 1 0;
+    min-width: 116px;
+    background: var(--card);
+    border: 2px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 12px 14px;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.02);
+  }
+  .node .tag {
+    display: block; font-size: 10px; letter-spacing: 0.6px;
+    color: var(--muted); text-transform: uppercase; margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .node .title { font-weight: 700; font-size: 14px; }
+  .node .body { color: #4a4a4a; font-size: 12px; margin-top: 6px; line-height: 1.5; }
+  .node.user   { background: var(--user);   border-color: var(--user-bd); }
+  .node.work   { background: var(--work);   border-color: var(--work-bd); }
+  .node.review { background: var(--review); border-color: var(--review-bd); }
+
+  .arrow {
+    display: flex; align-items: center; justify-content: center;
+    color: #b0b0b0; font-size: 16px; font-weight: 600; min-width: 14px;
+  }
+
+  .legend {
+    display: flex; gap: 24px; flex-wrap: wrap;
+    margin: 16px 0 0;
+    font-size: 12px; color: #555;
+  }
+  .dot {
+    display: inline-block; width: 10px; height: 10px;
+    border-radius: 50%; margin-right: 6px;
+    vertical-align: middle;
+    border: 2px solid;
+  }
+  .dot.user   { background: var(--user);   border-color: var(--user-bd); }
+  .dot.work   { background: var(--work);   border-color: var(--work-bd); }
+  .dot.review { background: var(--review); border-color: var(--review-bd); }
+
+  .footnote {
+    margin-top: 14px;
+    background: #f3f3ef;
+    border-left: 3px solid #999;
+    padding: 10px 14px;
+    color: #444; font-size: 13px;
+  }
+  .footnote strong { color: var(--ink); }
+
+  /* ======= 图 2：三层叠加 ======= */
+  .stack { display: flex; flex-direction: column; gap: 0; }
+  .layer {
+    border-radius: 12px;
+    padding: 22px 24px 24px;
+    border: 2px solid;
+  }
+  .layer .lname {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.8px;
+    opacity: 0.7; text-transform: uppercase;
+  }
+  .layer .ltitle {
+    font-size: 18px; font-weight: 700;
+    margin: 6px 0 18px;
+  }
+  .lcomps { display: flex; gap: 12px; flex-wrap: wrap; }
+  .comp {
+    background: rgba(255,255,255,0.78);
+    border-radius: 8px;
+    padding: 12px 14px;
+    flex: 1 1 220px;
+    min-width: 220px;
+  }
+  .comp .ct { font-weight: 700; font-size: 14px; }
+  .comp .cd { color: #555; font-size: 12px; line-height: 1.55; margin-top: 4px; }
+  .layer.v1 { background: var(--v1); border-color: var(--v1-bd); }
+  .layer.v2 { background: var(--v2); border-color: var(--v2-bd); }
+  .layer.v3 { background: var(--v3); border-color: var(--v3-bd); }
+  .stackjoin {
+    text-align: center;
+    color: #777; font-size: 12px;
+    padding: 10px 0;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+
+  /* ======= 速查表 ======= */
+  table {
+    width: 100%; border-collapse: collapse;
+    margin-top: 14px; font-size: 13px;
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: 8px; overflow: hidden;
+  }
+  th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { background: #f3f3ef; font-size: 12px; color: var(--muted); font-weight: 700; letter-spacing: 0.3px; }
+  tr:last-child td { border-bottom: 0; }
+  td code, p code, .footnote code {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    background: #efeee8; padding: 2px 6px; border-radius: 4px;
+    color: #2d2d2d;
+  }
+
+  footer {
+    margin-top: 64px; padding-top: 22px;
+    border-top: 1px solid var(--rule);
+    color: var(--muted); font-size: 12px;
+    line-height: 1.7;
+  }
+
+  /* 屏幕窄一点的兜底，确保展示笔记本上不挤 */
+  @media (max-width: 1024px) {
+    .node { flex: 1 1 140px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>wow-harness 在 Towow 的实践</h1>
+  <p class="lead">两张图 / 一份速查表 — harness 当前真实在跑的样子。</p>
+  <p class="meta">53 天 · 1137 commits · 93 万行 · 1992 测试 · 一个人 + AI 全自主交付</p>
+
+  <!-- ============ 图 1 ============ -->
+  <h2><span class="num">图 1</span>你说一句话，AI 自己干完 8 关</h2>
+
+  <div class="flow">
+
+    <div class="node user">
+      <span class="tag">起点</span>
+      <div class="title">你说</div>
+      <div class="body">「我要做 X」</div>
+    </div>
+    <div class="arrow">›</div>
+
+    <div class="node work">
+      <span class="tag">Gate 0</span>
+      <div class="title">lead 锁问题</div>
+      <div class="body">判定变更分类</div>
+    </div>
+    <div class="arrow">›</div>
+
+    <div class="node work">
+      <span class="tag">Gate 1</span>
+      <div class="title">arch 出架构</div>
+      <div class="body">列清消费方</div>
+    </div>
+    <div class="arrow">›</div>
+
+    <div class="node review">
+      <span class="tag">Gate 2</span>
+      <div class="title">独立审查 AI</div>
+      <div class="body">tools 不含<br/>Edit / Write</div>
+    </div>
+    <div class="arrow">›</div>
+
+    <div class="node review">
+      <span class="tag">Gate 3-4</span>
+      <div class="title">plan-lock</div>
+      <div class="body">冻结方案<br/>独立再审</div>
+    </div>
+    <div class="arrow">›</div>
+
+    <div class="node review">
+      <span class="tag">Gate 5-6</span>
+      <div class="title">task-arch 拆 WP</div>
+      <div class="body">独立审查<br/>接缝有 owner</div>
+    </div>
+    <div class="arrow">›</div>
+
+    <div class="node work">
+      <span class="tag">Gate 7</span>
+      <div class="title">harness-dev 写码</div>
+      <div class="body">边写边记日志</div>
+    </div>
+    <div class="arrow">›</div>
+
+    <div class="node review">
+      <span class="tag">Gate 8</span>
+      <div class="title">终审 + E2E</div>
+      <div class="body">通过才出 PR</div>
+    </div>
+    <div class="arrow">›</div>
+
+    <div class="node user">
+      <span class="tag">终点</span>
+      <div class="title">accept PR</div>
+    </div>
+
+  </div>
+
+  <div class="legend">
+    <span><span class="dot user"></span>你的输入 / 你的决策</span>
+    <span><span class="dot work"></span>AI 执行（lead / arch / dev 等）</span>
+    <span><span class="dot review"></span>独立审查 AI（无 Edit / Write 工具，物理上不能改代码）</span>
+  </div>
+
+  <div class="footnote">
+    <strong>红色那 4 关</strong>由全新独立的 AI 接手 — 不共享之前对话从头看，工具清单里物理移除 Edit / Write，<em>不是嘱咐它「请只看不改」，是它根本调不出这两个工具</em>。
+  </div>
+
+
+  <!-- ============ 图 2 ============ -->
+  <h2><span class="num">图 2</span>三层 harness（v1 → v2 → v3）</h2>
+
+  <div class="stack">
+
+    <div class="layer v3">
+      <div class="lname">v3 · 兜底治理</div>
+      <div class="ltitle">H 系列（hanis）— harness 自己出问题谁来修</div>
+      <div class="lcomps">
+        <div class="comp">
+          <div class="ct">H0 元规约</div>
+          <div class="cd">6+1 条款 · Nature 单签 · 不引用未来产物</div>
+        </div>
+        <div class="comp">
+          <div class="ct">H9 多窗口邮箱</div>
+          <div class="cd">取代人脑协调员 · 文件 + 5 hook</div>
+        </div>
+        <div class="comp">
+          <div class="ct">H1 学习层复活</div>
+          <div class="cd">crystal-learn 周期触发 · 8 条不变量</div>
+        </div>
+        <div class="comp">
+          <div class="ct">H2-H8</div>
+          <div class="cd">身份隔离 · 记忆分段 · prompt 治理 · Gate 量纲化 · 状态健康度 · 文档合规</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stackjoin">↑ 升级</div>
+
+    <div class="layer v2">
+      <div class="lname">v2 · 能力层</div>
+      <div class="ltitle">vNext — 生命周期 + 契约</div>
+      <div class="lcomps">
+        <div class="comp">
+          <div class="ct">mode-toolkit</div>
+          <div class="cd">/mode plan → build → verify → release · 每个阶段 deny / defer / ask / allow 哪些工具</div>
+        </div>
+        <div class="comp">
+          <div class="ct">review-toolkit</div>
+          <div class="cd">reviewer subagent + verify-gate hook + review-contract.yaml · 契约驱动 spawn</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stackjoin">↑ 基底</div>
+
+    <div class="layer v1">
+      <div class="lname">v1 · 机械化基底</div>
+      <div class="ltitle">wow-harness — 18 hooks + 16 skills + 15 checks</div>
+      <div class="lcomps">
+        <div class="comp">
+          <div class="ct">18 hooks</div>
+          <div class="cd">7 个生命周期阶段 · 动作发生那一刻物理拦截</div>
+        </div>
+        <div class="comp">
+          <div class="ct">16 skills</div>
+          <div class="cd">lead / arch / dev / reviewer / crystal-learn / skill-discovery / plan-lock ...</div>
+        </div>
+        <div class="comp">
+          <div class="ct">15 checks</div>
+          <div class="cd">规则 / 编号 / IO schema 自动验证</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+
+  <!-- ============ 速查表 ============ -->
+  <h2><span class="num">附</span>想直接看实现，打开这几个文件</h2>
+  <table>
+    <thead>
+      <tr><th style="width: 30%">你想看</th><th>打开这个</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>审查 AI 物理上改不了代码</td>
+        <td><code>.claude/plugins/towow-review-toolkit/agents/reviewer.md</code><br/>
+          看顶上 <code>tools:</code> 列表 — 没有 Edit / Write / Bash</td>
+      </tr>
+      <tr>
+        <td>ADR 编号撞了 git 直接拒绝提交</td>
+        <td><code>.githooks/pre-commit</code>（22 行 shell）<br/>
+          + <code>scripts/checks/check_adr_plan_numbering.py</code></td>
+      </tr>
+      <tr>
+        <td>AI 之间怎么传消息（H9 邮箱）</td>
+        <td><code>.towow/inbox/schema/message-v1.json</code><br/>
+          + 5 个 inbox hook（write-ledger / validate / inject-on-start / poll / ack）</td>
+      </tr>
+      <tr>
+        <td>16 个 skill 怎么分工</td>
+        <td><code>.claude/skills/</code> — 每个子目录一个 SKILL.md</td>
+      </tr>
+      <tr>
+        <td>所有 hook IO schema</td>
+        <td><code>scripts/hooks/_hook_output.py</code> — 16 个 helper API（ADR-058 §D1）</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <footer>
+    本地双击 <code>practice.html</code> 用浏览器打开 / 也可以投到大屏。<br/>
+    所有图块用纯 HTML+CSS 画 — 不依赖 mermaid / 不依赖 markdown viewer / 不依赖网络。
+  </footer>
+
+</div>
+</body>
+</html>
